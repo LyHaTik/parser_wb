@@ -1,0 +1,6 @@
+requests
+psycopg2-binary
+gspread
+oauth2client
+pandas
+python-dotenv

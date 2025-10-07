@@ -1,0 +1,110 @@
+services:
+  db:
+    image: postgres:15
+    container_name: parser_wb_db
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5438:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - parser_wb_network
+
+  airflow-db:
+    image: postgres:15
+    container_name: airflow-db
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow_db
+    volumes:
+      - airflow_pgdata:/var/lib/postgresql/data
+    networks:
+      - airflow_network
+
+  airflow-init:
+    image: apache/airflow:2.9.1
+    depends_on:
+      - airflow-db
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username airflow --password airflow --firstname Admin --lastname User --role Admin --email admin@example.com"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/credentials:/opt/airflow/credentials
+    networks:
+      - airflow_network
+    
+  airflow-webserver:
+    build:
+      context: .
+    image: apache/airflow:2.9.1
+    restart: always
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__WEBSERVER__DEFAULT_USER: airflow
+      AIRFLOW__WEBSERVER__DEFAULT_PASSWORD: airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW_UID: 50000
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/credentials:/opt/airflow/credentials
+    depends_on:
+      - airflow-db
+    networks:
+      - airflow_network
+      - parser_wb_network
+    user: "${AIRFLOW_UID:-50000}"
+    command: webserver
+  
+  airflow-scheduler:
+    build:
+      context: .
+    image: apache/airflow:2.9.1
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - airflow-db
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW_UID: 50000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/credentials:/opt/airflow/credentials
+    networks:
+      - airflow_network
+      - parser_wb_network
+    user: "${AIRFLOW_UID:-50000}"
+    command: scheduler
+
+volumes:
+  pgdata:
+  airflow_pgdata:
+
+networks:
+  parser_wb_network:
+  airflow_network:
